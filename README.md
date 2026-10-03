@@ -250,49 +250,6 @@ kubectl -n devops-lab get pods
 При ошибке собрать `bash scripts/diagnose.sh`: вывод теперь включает template/revision
 StatefulSet, описание web Pod, EndpointSlices и предыдущие логи Fluentd.
 
-### Продолжение после ошибки containerd
-
-В старой поставке сообщение `Ubuntu containerd 1.x configuration is required.` означало,
-что bootstrap не распознал формат сгенерированного TOML. В обновлениях Ubuntu 24.04
-есть containerd 2.x: вместо `sandbox_image` он использует `pinned_images.sandbox`.
-Исправленная версия поддерживает оба формата и оба вида кавычек, проверяет TOML через
-Python `tomllib`, затем через `containerd config dump` до замены рабочего файла.
-
-Если уже получил **именно это сообщение** при запуске старого архива, скачай
-`containerd-hotfix.zip` и распакуй **внутри существующей папки проекта**:
-
-```bash
-cd /ABSOLUTE/PATH/devops-lab
-unzip -o ~/Downloads/containerd-hotfix.zip
-sudo bash deploy.sh --resume-bootstrap
-```
-
-Путь к архиву заменить на свой. При нескольких интерфейсах можно добавить
-`--node-ip 192.168.1.50`. Hotfix содержит актуальные файлы проекта с путями относительно его корня;
-не включает `.state/` и настройки Git. Подробности в `HOTFIX.md`. Полный обновлённый архив - `devops-lab-fixed.zip`.
-Для новой VM флаг не нужен: обычная команда `sudo bash deploy.sh`.
-
-`--resume-bootstrap` признаёт только следы старого bootstrap до `kubeadm init`:
-`containerd.new`, резервную копию fstab, ключ Kubernetes и файлы настройки host.
-При работающем containerd он проверяет все namespaces на контейнеры/tasks;
-при остановленном runtime со своей базой данных требует сначала запустить сервис для проверки.
-Чужой кластер, Docker `containerd.io`, посторонние контейнеры и частичная инициализация
-kubeadm не восстанавливаются автоматически. Исходный containerd config сохраняется
-в `/var/lib/devops-lab/containerd.config.before`. Сбрасывать kubeadm из-за этой ошибки не нужно.
-
-Пустой служебный `/etc/kubernetes/manifests/.kubelet-keep` не означает наличие
-control plane. Исправленная проверка игнорирует файлы, начинающиеся с точки,
-как kubelet. Видимые файлы, включая backup и symlinks, по-прежнему блокируют
-автоматическое продолжение независимо от расширения.
-
-При повторных сбоях сначала собрать диагностику:
-
-```bash
-containerd --version
-sudo systemctl status containerd --no-pager
-sudo journalctl -u containerd -n 100 --no-pager
-```
-
 ## Проверка Gateway API
 
 ```bash
@@ -339,7 +296,7 @@ Smoke-тест проверяет все три HTTPRoute, JSON и Location бе
 «Котик был доставлен через Kubernetes». Страница и `/cats/cat.png` обслуживаются
 nginx через существующий HTTPRoute web и получают заголовок X-DevOps-Lab.
 Исходники: web/cats.html и web/cat.png; deploy создаёт ConfigMap web-cats
-через server-side apply, монтирует его read-only и учитывает файлы в config hash.
+через server-side apply, монтирует его read-only и учитывает файлы в config.
 verify.py проверяет страницу, Gateway headers и точное совпадение байтов PNG.
 
 ## Проверка Prometheus
@@ -428,7 +385,7 @@ kubectl -n devops-lab exec web-0 -c nginx -- sh -c 'ls -lh /logs; du -sh /logs'
 файлах. Ошибка или прерывание не оставляет старый passed. Этот тест дополняет verify.py;
 обычный smoke не подтверждает нагрузочную ротацию.
 
-## Общая проверка и подтверждение на Ubuntu
+## Общая проверка на Ubuntu
 
 ```bash
 export PATH="/var/lib/devops-lab/venv/bin:$PATH"
@@ -475,27 +432,6 @@ python3 scripts/verify.py
   root только для установки владельца выделенных hostPath-каталогов.
 - GitHub CI: проверка синтаксиса, схем, тестов и конфигураций, временный kind-кластер с Flannel,
   развёртывание, автоматическая проверка и повторное развёртывание. CI не использует пользовательские секреты.
-
-## GitHub и сдача
-
-Подробные команды: [docs/GITHUB.md](docs/GITHUB.md).
-Паспорт: [docs/passport.pdf](docs/passport.pdf), не более четырёх страниц.
-В текущей версии три страницы: схема и состав решения, функциональность с проверками,
-ревью и план развития. PDF и Word собираются из общего текста; схема создаётся кодом.
-После сбора фактических версий и пересборки паспорта через `bash scripts/finalize-docs.sh`
-публиковать репозиторий и собрать архив, заменив логин и фамилию:
-
-```bash
-.venv/bin/python scripts/make_submission.py \
-  --repo https://github.com/YOUR_LOGIN/devops-lab/tree/main \
-  --surname YOUR_SURNAME --check-public
-```
-
-В `submission/YOUR_SURNAME.zip` будут **ровно** `Ссылка.txt` с одной ссылкой и `Паспорт.pdf`.
-Архив исходников `devops-lab-fixed.zip` служит для получения проекта, а не заменяет этот архив сдачи.
-Репозиторий должен оставаться публичным; рабочее решение должно находиться в main.
-По тексту задания приём до **4 октября 23:59**, изменения main после срока запрещены.
-Часовой пояс в присланном документе не указан: проверить его у организаторов.
 
 ## Ограничения и восстановление
 
