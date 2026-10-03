@@ -1,0 +1,93 @@
+# Проверки выполняются на машине GitHub. Для основного стенда используется kubeadm.
+name: Проверка проекта и развёртывания
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Проверка Python и Bash
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt
+          export PATH="$PWD/.venv/bin:$PATH"
+          # Следующие шаги и вложенные скрипты используют тот же Python с ujson.
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          .venv/bin/python scripts/validate.py
+          .venv/bin/python scripts/check-publication.py
+          .venv/bin/python -m unittest discover -s tests -v
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck deploy.sh scripts/*.sh
+          .venv/bin/python scripts/extract-configs.py
+      - name: Проверка конфигураций компонентов
+        run: |
+          mkdir -p .state/configs/logs .state/configs/collected
+          chmod 0777 .state/configs/logs .state/configs/collected
+          touch .state/configs/logs/access.log .state/configs/logs/error.log
+          docker run --rm --network none --user 101:1000 --entrypoint nginx \
+            -v "$PWD/.state/configs/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            -v "$PWD/.state/configs/logs:/logs" nginx:1.28.0-alpine -t
+          docker run --rm --network none --user 1000:1000 --entrypoint fluentd \
+            -v "$PWD/.state/configs/fluent.conf:/fluentd/etc/fluent.conf:ro" \
+            -v "$PWD/.state/configs/logs:/logs:ro" \
+            -v "$PWD/.state/configs/collected:/collected" \
+            fluent/fluentd:v1.18.0-debian-1.0 --dry-run -c /fluentd/etc/fluent.conf
+          docker run --rm --network none --entrypoint /bin/promtool \
+            -v "$PWD/.state/configs:/etc/prometheus:ro" \
+            prom/prometheus:v3.6.0 check config /etc/prometheus/prometheus.yml
+          docker run --rm --network none --entrypoint /bin/promtool \
+            -v "$PWD:/work:ro" prom/prometheus:v3.6.0 \
+            test rules /work/tests/prometheus-rules.yaml
+      - name: Установка kind и kubectl
+        run: |
+          curl -fsSL --retry 3 https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64 -o /tmp/kind
+          curl -fsSL --retry 3 https://github.com/kubernetes-sigs/kind/releases/download/v0.33.0/kind-linux-amd64.sha256sum -o /tmp/kind.sha256sum
+          cd /tmp
+          sed 's/kind-linux-amd64/kind/' kind.sha256sum | sha256sum -c -
+          sudo install -m 0755 /tmp/kind /usr/local/bin/kind
+          curl -fsSL --retry 3 https://dl.k8s.io/release/v1.35.9/bin/linux/amd64/kubectl -o /tmp/kubectl
+          curl -fsSL --retry 3 https://dl.k8s.io/release/v1.35.9/bin/linux/amd64/kubectl.sha256 -o /tmp/kubectl.sha256
+          printf '%s  /tmp/kubectl\n' "$(cat /tmp/kubectl.sha256)" | sha256sum -c -
+          sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+      - name: Создание временного кластера
+        # kind проверяет манифесты и приложение, установку пакетов на Ubuntu VM проверяем отдельно.
+        run: |
+          kind create cluster --name lab --config config/kind-ci.yaml \
+            --image kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0
+          kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+      - name: Развёртывание и проверка
+        run: |
+          bash scripts/deploy-stack.sh
+          python3 scripts/verify.py --url http://127.0.0.1:30080 --report .state/ci-first.json
+      - name: Повторное развёртывание и проверка
+        # Второй запуск должен повторно пройти все проверки без сброса кластера и данных.
+        run: |
+          bash scripts/deploy-stack.sh
+          python3 scripts/verify.py --url http://127.0.0.1:30080 --report .state/ci-repeat.json
+      - name: Проверка ротации под нагрузкой
+        run: python3 scripts/check-log-rotation.py --url http://127.0.0.1:30080
+      - name: Диагностика ошибки
+        if: failure()
+        run: bash scripts/diagnose.sh || true
+      - name: Сохранение отчётов проверки
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: smoke-verification
+          path: |
+            .state/ci-*.json
+            .state/log-rotation.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Удаление временного кластера
+        if: always()
+        run: kind delete cluster --name lab || true

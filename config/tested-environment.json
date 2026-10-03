@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": null,
+  "source": "вывод диагностики и успешной автоматической проверки пользователя от 01.10.2026; автоматический сбор ещё не выполнен",
+  "observed": {
+    "ubuntu": "Ubuntu 24.04.5 LTS",
+    "kernel": "6.18.40.1-microsoft-standard-WSL2",
+    "environment": "WSL2",
+    "kubernetes": "v1.35.9",
+    "containerd": "containerd://2.2.1",
+    "kubeadm": null,
+    "kubectl_client": null,
+    "api_server": null,
+    "python": null,
+    "gateway_api": null,
+    "nginx": null,
+    "nginx_gateway_fabric": null,
+    "nginx_data_plane": null,
+    "flannel": null,
+    "prometheus": null,
+    "nginx_prometheus_exporter": null,
+    "fluentd": null,
+    "busybox": null,
+    "ujson": null
+  },
+  "packages": {},
+  "images": [],
+  "readiness": {
+    "devops-lab": {
+      "pods": 4,
+      "ready": 4
+    }
+  },
+  "differences_from_pins": [],
+  "verification_scope": "Базовая цепочка Gateway -> nginx -> Prometheus/Fluentd прошла по предоставленному stdout. 03.10.2026 автор подтвердил работу стенда и доступ из Windows. Актуальные JSON-отчёты всех маршрутов, /cats и двух развёртываний собираются на стенде."
+}

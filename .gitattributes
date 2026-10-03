@@ -1,0 +1,18 @@
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.editorconfig text eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.doc binary
+*.docx binary
+# Сохраняем исходные файлы зависимостей и их контрольные суммы SHA-256.
+vendor/** -whitespace

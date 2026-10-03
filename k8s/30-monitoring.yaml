@@ -1,0 +1,196 @@
+# Prometheus собирает метрики приложения, контроллера Gateway и самого себя.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: devops-lab
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 10s
+      evaluation_interval: 10s
+    rule_files:
+      - /etc/prometheus/alerts.yml
+    scrape_configs:
+      # Адреса стабильны за счёт Service, IP отдельных Pod указывать не нужно.
+      - job_name: prometheus
+        static_configs:
+          - targets: ['localhost:9090']
+      - job_name: nginx
+        static_configs:
+          - targets: ['nginx-exporter.devops-lab.svc.cluster.local:9113']
+      - job_name: gateway-controller
+        static_configs:
+          - targets: ['nginx-gateway.nginx-gateway.svc.cluster.local:9113']
+  alerts.yml: |
+    # Правила видны в Prometheus. Для отправки уведомлений нужен отдельный Alertmanager.
+    groups:
+      - name: lab
+        rules:
+          - alert: NginxUnavailable
+            expr: nginx_up{job="nginx"} == 0 or up{job="nginx"} == 0 or absent(nginx_up{job="nginx"}) or absent(up{job="nginx"})
+            for: 1m
+            labels: {severity: warning}
+            annotations:
+              summary: nginx или его exporter недоступен
+          - alert: GatewayControllerUnavailable
+            expr: up{job="gateway-controller"} == 0 or absent(up{job="gateway-controller"})
+            for: 1m
+            labels: {severity: warning}
+            annotations:
+              summary: Источник метрик контроллера Gateway недоступен
+          - record: lab:nginx_requests_per_second:rate5m
+            # Для rate нужны как минимум две точки; нулевая нагрузка допустима.
+            expr: sum(rate(nginx_http_requests_total[5m]))
+          - record: lab:gateway_controller_memory_bytes
+            expr: sum(process_resident_memory_bytes{job="gateway-controller"})
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-exporter
+  namespace: devops-lab
+spec:
+  selector: {app: nginx-exporter}
+  ports:
+    - {name: metrics, port: 9113, targetPort: metrics}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-exporter
+  namespace: devops-lab
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: nginx-exporter}
+  template:
+    metadata:
+      labels: {app: nginx-exporter}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: exporter
+          image: nginx/nginx-prometheus-exporter:1.4.2
+          args: ['--nginx.scrape-uri=http://web.devops-lab.svc.cluster.local:8081/stub_status']
+          ports:
+            - {name: metrics, containerPort: 9113}
+          # Перезапуск экспортера не исправляет временную недоступность nginx или DNS.
+          # Startup/liveness проверяют listener, а backend проверяет nginx_up в verify.py.
+          startupProbe:
+            tcpSocket: {port: metrics}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 24
+          readinessProbe:
+            httpGet: {path: /metrics, port: metrics}
+            timeoutSeconds: 7
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket: {port: metrics}
+            timeoutSeconds: 2
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ['ALL']}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: devops-lab
+spec:
+  selector: {app: prometheus}
+  ports:
+    - {name: http, port: 9090, targetPort: http}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prometheus
+  namespace: devops-lab
+spec:
+  serviceName: prometheus
+  replicas: 1
+  selector:
+    matchLabels: {app: prometheus}
+  template:
+    metadata:
+      labels: {app: prometheus}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: data-permissions
+          image: busybox:1.37.0
+          # Только init-контейнер меняет владельца hostPath, сам Prometheus работает без root.
+          command: ["sh", "-c", "chown 65534:65534 /prometheus && chmod 0750 /prometheus"]
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "FOWNER"]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 32Mi}
+          volumeMounts:
+            - {name: data, mountPath: /prometheus}
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.6.0
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=7d
+            - --storage.tsdb.retention.size=1GB
+          ports:
+            - {name: http, containerPort: 9090}
+          # После запуска Prometheus может восстанавливать базу метрик с диска.
+          # Даём ему до трёх минут, затем начинают работать остальные probes.
+          startupProbe:
+            httpGet: {path: /-/ready, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: {path: /-/ready, port: http}
+          livenessProbe:
+            httpGet: {path: /-/healthy, port: http}
+            initialDelaySeconds: 20
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ['ALL']}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: 500m, memory: 768Mi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/prometheus, readOnly: true}
+            - {name: data, mountPath: /prometheus}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap: {name: prometheus-config}
+        - name: data
+          hostPath:
+            path: /var/lib/devops-lab/prometheus
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir: {sizeLimit: 32Mi}

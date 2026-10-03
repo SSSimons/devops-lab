@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "manual_confirmation": {
+    "date": "2026-10-03",
+    "environment": "WSL2 Ubuntu 24.04",
+    "application_from_windows": true,
+    "source": "Подтверждение автора после восстановления kubelet и проверки доступа из Windows"
+  }
+}

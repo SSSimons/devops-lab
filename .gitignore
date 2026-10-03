@@ -1,0 +1,61 @@
+# Локальные отчёты и архивы для сдачи
+.state/
+submission/
+output/
+dist/
+build/
+*.zip
+*.rar
+*.tar
+*.tar.gz
+*.log
+*.log.*
+
+# Окружения Python, кеши и отчёты о покрытии
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+
+# Секреты и локальные настройки
+.env
+.env.*
+!.env.example
+!.env.sample
+.kube/
+.ssh/
+*.kubeconfig
+kubeconfig
+kubeconfig.*
+admin.conf
+super-admin.conf
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+secrets.yaml
+secrets.yml
+
+# Временные файлы редакторов, Windows, macOS и Word
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+~$*
+.~lock.*#
+
+# Паспорт PDF/DOCX и список фактических версий без секретов добавляются в Git.

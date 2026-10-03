@@ -1,0 +1,248 @@
+# nginx обслуживает приложение, Fluentd читает его логи из общей директории.
+# Собранные записи остаются на диске узла после пересоздания Pod.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: devops-lab
+data:
+  nginx.conf: |
+    worker_processes auto;
+    pid /tmp/nginx.pid;
+    error_log /logs/error.log warn;
+    events { worker_connections 1024; }
+    http {
+      include /etc/nginx/mime.types;
+      default_type text/plain;
+      server_tokens off;
+      client_body_temp_path /tmp/client_temp;
+      proxy_temp_path /tmp/proxy_temp;
+      fastcgi_temp_path /tmp/fastcgi_temp;
+      uwsgi_temp_path /tmp/uwsgi_temp;
+      scgi_temp_path /tmp/scgi_temp;
+      log_format json escape=json
+        '{"timestamp":"$time_iso8601","remote_addr":"$remote_addr",'
+        '"method":"$request_method","uri":"$request_uri",'
+        '"status":$status,"bytes":$body_bytes_sent,"request_time":$request_time}';
+      access_log /logs/access.log json;
+      server {
+        listen 8080;
+        location = / { return 200 "Hello World!\n"; }
+        location = /info {
+          default_type application/json;
+          return 200 '{"service":"devops-lab","stack":"kubeadm + nginx"}\n';
+        }
+        location = /healthz { access_log off; return 200 "ok\n"; }
+        location = /cats {
+          default_type text/html;
+          charset utf-8;
+          alias /usr/share/nginx/cats/cats.html;
+        }
+        location = /cats/ {
+          default_type text/html;
+          charset utf-8;
+          alias /usr/share/nginx/cats/cats.html;
+        }
+        location = /cats/cat.png { alias /usr/share/nginx/cats/cat.png; }
+        location / { root /usr/share/nginx/html; }
+      }
+      server {
+        listen 8081;
+        access_log off;
+        # Этот порт нужен exporter внутри кластера, через Gateway он не публикуется.
+        location = /stub_status { stub_status; }
+        location / { return 404; }
+      }
+    }
+  fluent.conf: |
+    <system>
+      log_level info
+    </system>
+    <source>
+      @type tail
+      # Читаем и активный файл, и архивы. follow_inodes исключает повторное чтение inode.
+      path /logs/access.log,/logs/access.log.*
+      follow_inodes true
+      # Позиция чтения хранится рядом с собранными логами на hostPath.
+      pos_file /collected/access.pos
+      pos_file_compaction_interval 1h
+      tag nginx.access
+      read_from_head true
+      refresh_interval 2
+      rotate_wait 5
+      <parse>
+        @type json
+      </parse>
+    </source>
+    <source>
+      @type tail
+      path /logs/error.log,/logs/error.log.*
+      follow_inodes true
+      pos_file /collected/error.pos
+      pos_file_compaction_interval 1h
+      tag nginx.error
+      read_from_head true
+      refresh_interval 2
+      rotate_wait 5
+      <parse>
+        @type none
+      </parse>
+    </source>
+    <filter nginx.**>
+      @type record_transformer
+      <record>
+        source ${tag}
+      </record>
+    </filter>
+    <match nginx.**>
+      @type file
+      path /collected/events
+      append true
+      <format>
+        @type json
+      </format>
+      <buffer time>
+        # Пишем через файловый буфер с ограничением размера, при сбое повторяем запись.
+        @type file
+        path /collected/buffer
+        timekey 3600
+        timekey_wait 1
+        timekey_use_utc true
+        flush_mode interval
+        flush_interval 2s
+        flush_at_shutdown true
+        chunk_limit_size 1m
+        total_limit_size 64m
+        overflow_action block
+        retry_forever true
+      </buffer>
+    </match>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: devops-lab
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: status
+      port: 8081
+      targetPort: status
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+  namespace: devops-lab
+spec:
+  serviceName: web
+  # Один Fluentd читает один набор файлов. Масштабирование требует другого хранения.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: log-permissions
+          image: busybox:1.37.0
+          # Ruby не принимает временный каталог с общим доступом на запись без sticky bit.
+          # Настраиваем права emptyDir до запуска Fluentd от обычного пользователя.
+          command: ["sh", "-c", "chown 1000:1000 /collected && chmod 0750 /collected && chmod 1777 /fluent-tmp"]
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["CHOWN", "FOWNER"]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 32Mi}
+          volumeMounts:
+            - {name: collected, mountPath: /collected}
+            - {name: fluent-tmp, mountPath: /fluent-tmp}
+      containers:
+        - name: nginx
+          image: nginx:1.28.0-alpine
+          command: ["sh", "/opt/devops-lab/nginx-run.sh"]
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: status, containerPort: 8081}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {cpu: 300m, memory: 128Mi}
+          volumeMounts:
+            - {name: config, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf, readOnly: true}
+            - {name: log-rotation, mountPath: /opt/devops-lab, readOnly: true}
+            - {name: cats, mountPath: /usr/share/nginx/cats, readOnly: true}
+            - {name: raw-logs, mountPath: /logs}
+            - {name: tmp, mountPath: /tmp}
+        - name: fluentd
+          image: fluent/fluentd:v1.18.0-debian-1.0
+          command: ["fluentd", "-c", "/fluentd/etc/fluent.conf"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          readinessProbe:
+            exec:
+              command: ["ruby", "-e", "exit(File.exist?('/collected/access.pos') && File.exist?('/collected/error.pos') ? 0 : 1)"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          volumeMounts:
+            - {name: config, mountPath: /fluentd/etc/fluent.conf, subPath: fluent.conf, readOnly: true}
+            - {name: raw-logs, mountPath: /logs, readOnly: true}
+            - {name: collected, mountPath: /collected}
+            - {name: fluent-tmp, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap: {name: web-config}
+        - name: cats
+          configMap: {name: web-cats}
+        - name: log-rotation
+          configMap: {name: web-log-rotation}
+        - name: raw-logs
+          emptyDir: {sizeLimit: 128Mi}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+        - name: fluent-tmp
+          emptyDir: {sizeLimit: 32Mi}
+        - name: collected
+          hostPath:
+            path: /var/lib/devops-lab/logs
+            type: DirectoryOrCreate

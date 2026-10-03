@@ -1,0 +1,14 @@
+{
+  "kubernetes": "1.35.9",
+  "gateway_api": "1.6.1",
+  "nginx_gateway_fabric": "2.7.2",
+  "flannel": "0.28.4",
+  "nginx": "1.28.0-alpine",
+  "nginx_prometheus_exporter": "1.4.2",
+  "prometheus": "3.6.0",
+  "fluentd": "v1.18.0-debian-1.0",
+  "busybox": "1.37.0",
+  "python": "3.12 (Ubuntu 24.04)",
+  "ujson": "6.0.0",
+  "containerd": "1.7.x / 2.x из apt Ubuntu 24.04; поддерживается TOML v2/v3; фактическую версию пакета фиксирует evidence.sh"
+}

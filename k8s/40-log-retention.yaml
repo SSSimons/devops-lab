@@ -1,0 +1,42 @@
+# Удаляем старые итоговые файлы Fluentd, не затрагивая позицию чтения и файловый буфер.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: log-retention
+  namespace: devops-lab
+spec:
+  schedule: '23 3 * * *'
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: prune
+              image: busybox:1.37.0
+              command: ['sh', '-c', 'find /collected -maxdepth 1 -name "events*.log" -type f -mtime +7 -delete']
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ['ALL']}
+              resources:
+                requests: {cpu: 10m, memory: 16Mi}
+                limits: {cpu: 100m, memory: 32Mi}
+              volumeMounts:
+                - {name: collected, mountPath: /collected}
+          volumes:
+            - name: collected
+              hostPath:
+                path: /var/lib/devops-lab/logs
+                type: Directory

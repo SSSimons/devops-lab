@@ -1,0 +1,58 @@
+rule_files:
+  - ../.state/configs/alerts.yml
+evaluation_interval: 10s
+fuzzy_compare: true
+tests:
+  - name: Доступные источники метрик и частота запросов
+    interval: 10s
+    input_series:
+      - series: 'up{job="nginx",instance="nginx"}'
+        values: '1+0x60'
+      - series: 'nginx_up{job="nginx",instance="nginx"}'
+        values: '1+0x60'
+      - series: 'up{job="gateway-controller",instance="gateway"}'
+        values: '1+0x60'
+      - series: 'nginx_http_requests_total{job="nginx"}'
+        values: '0+100x60'
+      - series: 'process_resident_memory_bytes{job="gateway-controller"}'
+        values: '1024+0x60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: NginxUnavailable
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: GatewayControllerUnavailable
+        exp_alerts: []
+    promql_expr_test:
+      - expr: lab:nginx_requests_per_second:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: 'lab:nginx_requests_per_second:rate5m'
+            value: 10
+      - expr: lab:gateway_controller_memory_bytes
+        eval_time: 5m
+        exp_samples:
+          - labels: 'lab:gateway_controller_memory_bytes'
+            value: 1024
+  - name: Предупреждение при отсутствии метрик nginx
+    interval: 10s
+    input_series:
+      - series: 'up{job="gateway-controller",instance="gateway"}'
+        values: '1+0x18'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: NginxUnavailable
+        exp_alerts:
+          - exp_labels: {job: nginx, severity: warning}
+            exp_annotations: {summary: nginx или его exporter недоступен}
+  - name: Предупреждение при недоступности контроллера Gateway
+    interval: 10s
+    input_series:
+      - series: 'up{job="gateway-controller",instance="gateway"}'
+        values: '0+0x18'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: GatewayControllerUnavailable
+        exp_alerts:
+          - exp_labels: {job: gateway-controller, instance: gateway, severity: warning}
+            exp_annotations: {summary: Источник метрик контроллера Gateway недоступен}

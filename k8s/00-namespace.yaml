@@ -1,0 +1,7 @@
+# Приложение, маршруты, метрики и логи находятся в отдельном пространстве имён.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-lab
+  labels:
+    app.kubernetes.io/part-of: devops-lab

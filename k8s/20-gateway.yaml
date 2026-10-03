@@ -1,0 +1,79 @@
+# NGF создаёт nginx для приёма HTTP. Его NodePort 30080 закреплён в vendor/nginx-gateway.yaml.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: lab
+  namespace: devops-lab
+spec:
+  gatewayClassName: nginx
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        # Подключаем только маршруты из пространства имён этого Gateway.
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web
+  namespace: devops-lab
+spec:
+  parentRefs:
+    - {name: lab, sectionName: http}
+  rules:
+    # Общий маршрут приложения. Заголовок позволяет подтвердить прохождение Gateway.
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      filters:
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - {name: X-DevOps-Lab, value: gateway-api}
+      backendRefs:
+        - {name: web, port: 80}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: api-info
+  namespace: devops-lab
+spec:
+  parentRefs:
+    - {name: lab, sectionName: http}
+  rules:
+    # Публичный /api/info направляется в /info приложения без изменения nginx.
+    - matches:
+        - path: {type: Exact, value: /api/info}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path: {type: ReplaceFullPath, replaceFullPath: /info}
+        - type: ResponseHeaderModifier
+          responseHeaderModifier:
+            set:
+              - {name: X-DevOps-Lab, value: gateway-api}
+              - {name: X-DevOps-Route, value: api-rewrite}
+      backendRefs:
+        - {name: web, port: 80}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: legacy-redirect
+  namespace: devops-lab
+spec:
+  parentRefs:
+    - {name: lab, sectionName: http}
+  rules:
+    # Старый адрес перенаправляем на новый с сохранением внешнего порта 30080.
+    - matches:
+        - path: {type: Exact, value: /legacy}
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            path: {type: ReplaceFullPath, replaceFullPath: /api/info}
+            statusCode: 302
+            port: 30080
