@@ -77,6 +77,24 @@ jobs:
             net.bridge.bridge-nf-call-ip6tables=1 \
             net.ipv4.ip_forward=1
           kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+      - name: Установка CNI-плагинов в узел kind
+        # Flannel устанавливает свой плагин, а bridge/host-local/portmap нужны отдельно.
+        run: |
+          CNI_VERSION=v1.7.1
+          CNI_ARCHIVE="cni-plugins-linux-amd64-${CNI_VERSION}.tgz"
+          CNI_URL="https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}"
+          mkdir -p .state/cni
+          curl -fsSL --retry 3 "$CNI_URL/$CNI_ARCHIVE" -o ".state/cni/$CNI_ARCHIVE"
+          curl -fsSL --retry 3 "$CNI_URL/$CNI_ARCHIVE.sha256" -o ".state/cni/$CNI_ARCHIVE.sha256"
+          (cd .state/cni && sha256sum -c "$CNI_ARCHIVE.sha256")
+          docker exec lab-control-plane mkdir -p /opt/cni/bin
+          docker cp ".state/cni/$CNI_ARCHIVE" lab-control-plane:/tmp/cni-plugins.tgz
+          docker exec lab-control-plane tar -xzf /tmp/cni-plugins.tgz -C /opt/cni/bin
+          # Проверяем зависимости до ожидания CoreDNS, чтобы сразу увидеть проблему.
+          for plugin in bridge host-local loopback portmap; do
+            docker exec lab-control-plane test -x "/opt/cni/bin/$plugin"
+          done
+          docker exec lab-control-plane rm -f /tmp/cni-plugins.tgz
       - name: Развёртывание и проверка
         run: |
           bash scripts/deploy-stack.sh
@@ -99,6 +117,8 @@ jobs:
             docker exec lab-control-plane sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward || true
             echo 'Файл сети Flannel на узле:'
             docker exec lab-control-plane cat /run/flannel/subnet.env || true
+            echo 'Установленные CNI-плагины узла:'
+            docker exec lab-control-plane ls -lah /opt/cni/bin || true
             bash scripts/diagnose.sh || true
           } 2>&1 | tee .state/ci-diagnostics.txt
       - name: Сохранение отчётов проверки
