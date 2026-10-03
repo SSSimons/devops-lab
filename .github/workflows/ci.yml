@@ -32,6 +32,7 @@ jobs:
           mkdir -p .state/configs/logs .state/configs/collected
           chmod 0777 .state/configs/logs .state/configs/collected
           touch .state/configs/logs/access.log .state/configs/logs/error.log
+          chmod 0666 .state/configs/logs/access.log .state/configs/logs/error.log
           docker run --rm --network none --user 101:1000 --entrypoint nginx \
             -v "$PWD/.state/configs/nginx.conf:/etc/nginx/nginx.conf:ro" \
             -v "$PWD/.state/configs/logs:/logs" nginx:1.28.0-alpine -t
