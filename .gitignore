@@ -10,7 +10,7 @@ build/
 *.tar.gz
 *.log
 *.log.*
-
+*Zone.Identifier
 # Окружения Python, кеши и отчёты о покрытии
 .venv/
 venv/
