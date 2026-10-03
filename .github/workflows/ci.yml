@@ -58,11 +58,24 @@ jobs:
           curl -fsSL --retry 3 https://dl.k8s.io/release/v1.35.9/bin/linux/amd64/kubectl.sha256 -o /tmp/kubectl.sha256
           printf '%s  /tmp/kubectl\n' "$(cat /tmp/kubectl.sha256)" | sha256sum -c -
           sudo install -m 0755 /tmp/kubectl /usr/local/bin/kubectl
+      - name: Подготовка сети для Flannel
+        # kind использует ядро машины GitHub. Основной kubeadm-стенд готовит bootstrap.sh.
+        run: |
+          sudo modprobe br_netfilter
+          sudo modprobe vxlan
+          sudo sysctl -w net.bridge.bridge-nf-call-iptables=1
+          sudo sysctl -w net.bridge.bridge-nf-call-ip6tables=1
+          sudo sysctl -w net.ipv4.ip_forward=1
       - name: Создание временного кластера
         # kind проверяет манифесты и приложение, установку пакетов на Ubuntu VM проверяем отдельно.
         run: |
           kind create cluster --name lab --config config/kind-ci.yaml \
             --image kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0
+          # Проверяем настройки внутри сетевого пространства узла, где запускается Flannel.
+          docker exec lab-control-plane sysctl -w \
+            net.bridge.bridge-nf-call-iptables=1 \
+            net.bridge.bridge-nf-call-ip6tables=1 \
+            net.ipv4.ip_forward=1
           kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
       - name: Развёртывание и проверка
         run: |
@@ -77,7 +90,17 @@ jobs:
         run: python3 scripts/check-log-rotation.py --url http://127.0.0.1:30080
       - name: Диагностика ошибки
         if: failure()
-        run: bash scripts/diagnose.sh || true
+        run: |
+          mkdir -p .state
+          {
+            echo 'Сетевые настройки машины GitHub:'
+            sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward || true
+            echo 'Сетевые настройки узла kind:'
+            docker exec lab-control-plane sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward || true
+            echo 'Файл сети Flannel на узле:'
+            docker exec lab-control-plane cat /run/flannel/subnet.env || true
+            bash scripts/diagnose.sh || true
+          } 2>&1 | tee .state/ci-diagnostics.txt
       - name: Сохранение отчётов проверки
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -86,6 +109,7 @@ jobs:
           path: |
             .state/ci-*.json
             .state/log-rotation.json
+            .state/ci-diagnostics.txt
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7

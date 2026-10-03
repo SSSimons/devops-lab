@@ -13,6 +13,19 @@ if ! k get nodes -o wide; then
 fi
 k get pods -A -o wide
 # Установка могла остановиться до создания пространства имён приложения.
+if k get namespace kube-flannel >/dev/null 2>&1; then
+  echo 'Диагностика Flannel: без сети Pod CoreDNS не сможет запуститься.'
+  k get nodes -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.podCIDR}{"\n"}{end}' || true
+  k -n kube-flannel get daemonset kube-flannel-ds -o wide || true
+  k -n kube-flannel get configmap kube-flannel-cfg -o yaml || true
+  k -n kube-flannel describe pods -l app=flannel || true
+  # У Pod есть init-контейнеры, поэтому контейнер Flannel указываем явно.
+  k -n kube-flannel logs -l app=flannel -c kube-flannel --tail=100 --prefix=true || true
+  k -n kube-flannel logs -l app=flannel -c kube-flannel --previous --tail=100 --prefix=true || true
+  k -n kube-flannel logs -l app=flannel -c install-cni-plugin --tail=30 --prefix=true || true
+  k -n kube-flannel logs -l app=flannel -c install-cni --tail=30 --prefix=true || true
+  k -n kube-flannel get events --sort-by=.metadata.creationTimestamp | tail -40 || true
+fi
 k -n kube-system get pods -l k8s-app=kube-dns -o wide
 k -n kube-system describe pods -l k8s-app=kube-dns
 k -n kube-system logs -l k8s-app=kube-dns --tail=60 --prefix=true
