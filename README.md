@@ -54,7 +54,7 @@ flowchart TD
 ### Фактически проверенное окружение
 
 <!-- BEGIN OBSERVED ENVIRONMENT -->
-Фактическое окружение: вывод диагностики и проверки 01.10.2026.
+Фактическое окружение:
 
 | Компонент | Фактическая версия |
 |---|---|
@@ -404,14 +404,6 @@ python3 scripts/verify.py
 `evidence.sh` сохраняет версию ОС, ядра, пакетов, образы/digests и результаты проверки
 в `.state/`. Эти файлы по умолчанию исключены из Git и не содержат kubeconfig.
 
-**Статус проверки:** пользователь предоставил успешную полную автоматическую проверку базовой
-цепочки на Ubuntu 24.04.5 WSL2, Kubernetes 1.35.9, containerd 2.2.1: HTTP, Gateway,
-живые метрики и обе категории собранных логов. 03.10.2026 подтверждены работа стенда
-и доступ из Windows. Актуальные JSON-отчёты всех маршрутов, /cats, новых проверок метрик и повторного
-деплоя собрать командой `sudo bash scripts/check-repeat.sh`.
-В среде подготовки выполняются локальные Python/YAML/CRD/OpenAPI/shell/component
-проверки. Отдельная свежая VM и GitHub Actions ещё требуют самостоятельного запуска.
-Сведения об окружении: `config/tested-environment.json`, ревью: `docs/REVIEW.md`.
 
 ## Дополнительные возможности
 
@@ -490,15 +482,13 @@ reset сам по себе не очищает CNI и сетевые прави�
 | `scripts/verify.py` | Gateway, HTTP/rewrite/redirect, метрики и собранные логи; Python и ujson |
 | `scripts/check-repeat.sh` | Два развёртывания и проверки и отдельные отчёты идемпотентности |
 | `scripts/prepare-git.sh`, `scripts/check-publication.py` | Подготовка локального Git index и проверка файлов перед публикацией |
-| `scripts/collect-versions.py`, `scripts/finalize-docs.sh` | Фактические версии/digests, README и паспорт |
-| `docs/DEPLOYMENT.md`, `docs/CRITERIA.md` | Пошаговый запуск/сдача и соответствие всем критериям |
+| `scripts/collect-versions.py` | Фактические версии |
 | `docs/ARCHITECTURE.md` | Архитектура, выбор инструментов, хранение данных и обоснование ограничений |
 | `scripts/diagnose.sh`, `scripts/evidence.sh` | Диагностика и отчёт окружения |
-| `scripts/diagnose-host.sh`, `docs/RECOVERY.md` | Диагностика без работающего API и восстановление WSL после включения swap |
+| `scripts/diagnose-host.sh` | Диагностика без работающего API и восстановление WSL после включения swap |
 | `scripts/validate.py`, `tests/` | Статические и unit-проверки |
 | `.github/workflows/ci.yml` | CI на GitHub Actions |
-| `scripts/make_submission.py` | Архив формата, указанного организаторами |
-| `scripts/build_passport.py`, `scripts/build_passport_docx.py`, `scripts/passport_content.py` | Пересборка PDF и Word из одного текста |
+| `scripts/make_submission.py` | Архив формата, указанного организаторами | 
 | `docs/OPERATIONS.md` | Краткие объяснения и сценарии для защиты |
 
 Для разработки/пересборки паспорта нужны отдельные зависимости, при развёртывании они не нужны:
