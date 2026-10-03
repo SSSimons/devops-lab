@@ -63,20 +63,20 @@ flowchart TD
 | Среда | `WSL2` |
 | Kubernetes | `v1.35.9` |
 | containerd | `containerd://2.2.1` |
-| kubeadm | `не измерено` |
-| Клиент kubectl | `не измерено` |
-| API-сервер Kubernetes | `не измерено` |
-| Python | `не измерено` |
-| ujson | `не измерено` |
-| Gateway API | `не измерено` |
-| nginx приложения | `не измерено` |
-| NGINX Gateway Fabric | `не измерено` |
-| nginx Gateway | `не измерено` |
-| Flannel | `не измерено` |
-| Prometheus | `не измерено` |
-| nginx exporter | `не измерено` |
-| Fluentd | `не измерено` |
-| BusyBox | `не измерено` |
+| kubeadm | `v1.35.9` |
+| Клиент kubectl | `v1.35.9` |
+| API-сервер Kubernetes | `v1.35.9` |
+| Python | `3.12.3` |
+| ujson | `6.0.0` |
+| Gateway API | `v1.6.1` |
+| nginx приложения | `1.28.0-alpine` |
+| NGINX Gateway Fabric | `2.7.2` |
+| nginx Gateway | `2.7.2` |
+| Flannel | `v0.28.4` |
+| Prometheus | `v3.6.0` |
+| nginx exporter | `1.4.2` |
+| Fluentd | `v1.18.0-debian-1.0` |
+| BusyBox | `1.37.0` |
 
 Дата сбора: не измерено.
 Точные версии пакетов и digest образов: `config/tested-environment.json`.
