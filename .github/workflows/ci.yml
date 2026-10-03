@@ -88,13 +88,12 @@ jobs:
           curl -fsSL --retry 3 "$CNI_URL/$CNI_ARCHIVE.sha256" -o ".state/cni/$CNI_ARCHIVE.sha256"
           (cd .state/cni && sha256sum -c "$CNI_ARCHIVE.sha256")
           docker exec lab-control-plane mkdir -p /opt/cni/bin
-          docker cp ".state/cni/$CNI_ARCHIVE" lab-control-plane:/tmp/cni-plugins.tgz
-          docker exec lab-control-plane tar -xzf /tmp/cni-plugins.tgz -C /opt/cni/bin
+          # Передаём архив через stdin: docker cp и docker exec могут видеть разные /tmp.
+          docker exec -i lab-control-plane tar -xzf - -C /opt/cni/bin < ".state/cni/$CNI_ARCHIVE"
           # Проверяем зависимости до ожидания CoreDNS, чтобы сразу увидеть проблему.
           for plugin in bridge host-local loopback portmap; do
             docker exec lab-control-plane test -x "/opt/cni/bin/$plugin"
           done
-          docker exec lab-control-plane rm -f /tmp/cni-plugins.tgz
       - name: Развёртывание и проверка
         run: |
           bash scripts/deploy-stack.sh
