@@ -347,8 +347,6 @@ sudo env KUBECONFIG=/etc/kubernetes/admin.conf bash scripts/diagnose.sh
 
 Если API недоступен: `sudo bash scripts/diagnose-host.sh`.
 В WSL повторно включённый swap, смена IP и пустой DNS-файл могут нарушить работу кластера.
-Сценарии восстановления: [docs/RECOVERY.md](docs/RECOVERY.md).
-Полная инструкция запуска: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## 📁 Файлы и документация
 
@@ -362,8 +360,7 @@ sudo env KUBECONFIG=/etc/kubernetes/admin.conf bash scripts/diagnose.sh
 | `scripts/collect-versions.py`, `scripts/evidence.sh` | Фактические версии и результаты проверки |
 | `scripts/diagnose.sh`, `scripts/diagnose-host.sh` | Диагностика стека и узла без API |
 | `scripts/validate.py`, `tests/`, `.github/workflows/ci.yml` | Статические проверки, тесты и CI |
-| `docs/ARCHITECTURE.md`, `docs/CRITERIA.md` | Архитектура и соответствие критериям |
-| `docs/GITHUB.md`, `docs/OPERATIONS.md` | Публикация проекта и пояснения для защиты |
+| `docs/ARCHITECTURE.md` | Архитектура |
 | `docs/passport.pdf`, `docs/passport.docx` | Паспорт решения |
 
 ## 📚 Первичные источники
