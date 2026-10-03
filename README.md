@@ -129,9 +129,10 @@ SSH-туннель - альтернативный вариант: `ssh -L 30080:
 
 ## Первый запуск
 
-Если после перезапуска WSL kubelet падает с `running with swap on is not supported`,
-выполнить `sudo swapoff -a` и `sudo systemctl restart kubelet`. Повторный deploy
-теперь исправляет этот случай до проверки API; инструкция и диагностика без API:
+Повторный deploy при ошибке
+теперь исправляет многие случаи при проверки API.
+
+инструкция и диагностика без API:
 [docs/RECOVERY.md](docs/RECOVERY.md).
 
 Скачанный архив содержит папку `devops-lab`. Распаковать и перейти в неё:
